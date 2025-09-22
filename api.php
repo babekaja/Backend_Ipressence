@@ -132,17 +132,14 @@ function handleCheckAttendance($pdo) {
     $session_id = $input['session_id'] ?? '';
     $token = $input['token'] ?? '';
 
-    // Si le matricule est vide, rediriger vers le site
+    // Si le matricule est vide, rediriger directement
     if (empty($matricule)) {
-        echo json_encode([
-            'status' => 'redirect',
-            'url' => 'https://ipressence-m.vercel.app/'
-        ]);
-        return;
+        header('Location: https://ipressence-m.vercel.app/');
+        exit();
     }
 
     if (empty($session_id) || empty($token)) {
-        echo json_encode(['status' => 'error', 'message' => 'Paramètres manquants']);
+        echo 'Paramètres manquants';
         return;
     }
 
@@ -152,7 +149,7 @@ function handleCheckAttendance($pdo) {
         $session = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$session) {
-            echo json_encode(['status' => 'error', 'message' => 'Session invalide ou expirée']);
+            echo 'Session invalide ou expirée';
             return;
         }
 
@@ -161,25 +158,26 @@ function handleCheckAttendance($pdo) {
         $student = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$student) {
-            echo json_encode(['status' => 'error', 'message' => 'Étudiant non trouvé']);
+            echo 'Étudiant non trouvé';
             return;
         }
 
         $stmt = $pdo->prepare("SELECT id FROM presences WHERE etudiant_id = ? AND session_id = ?");
         $stmt->execute([$student['id'], $session_id]);
         if ($stmt->fetch()) {
-            echo json_encode(['status' => 'error', 'message' => 'Présence déjà enregistrée pour cette session']);
+            echo 'Présence déjà enregistrée pour cette session';
             return;
         }
 
         $stmt = $pdo->prepare("INSERT INTO presences (etudiant_id, session_id, date_heure) VALUES (?, ?, NOW())");
         $stmt->execute([$student['id'], $session_id]);
 
-        echo json_encode(['status' => 'success', 'message' => 'Présence enregistrée avec succès']);
+        echo 'Présence enregistrée avec succès';
     } catch (PDOException $e) {
-        echo json_encode(['status' => 'error', 'message' => 'Erreur lors de l\'enregistrement']);
+        echo 'Erreur lors de l\'enregistrement';
     }
 }
+
 
 
 // --------------------
