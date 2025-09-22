@@ -132,7 +132,16 @@ function handleCheckAttendance($pdo) {
     $session_id = $input['session_id'] ?? '';
     $token = $input['token'] ?? '';
 
-    if (empty($matricule) || empty($session_id) || empty($token)) {
+    // Si le matricule est vide, rediriger vers le site
+    if (empty($matricule)) {
+        echo json_encode([
+            'status' => 'redirect',
+            'url' => 'https://ipressence-m.vercel.app/'
+        ]);
+        return;
+    }
+
+    if (empty($session_id) || empty($token)) {
         echo json_encode(['status' => 'error', 'message' => 'Paramètres manquants']);
         return;
     }
@@ -171,6 +180,7 @@ function handleCheckAttendance($pdo) {
         echo json_encode(['status' => 'error', 'message' => 'Erreur lors de l\'enregistrement']);
     }
 }
+
 
 // --------------------
 // LIST PRESENCES
