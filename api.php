@@ -110,7 +110,7 @@ function handleGenerateQR($pdo) {
         $stmt = $pdo->prepare("INSERT INTO sessions (session_id, enseignant_id, token, expiration) VALUES (?, ?, ?, ?)");
         $stmt->execute([$session_id, $enseignant_id, $token, $expiration]);
 
-        $qr_url = "http://localhost/api.php?action=check_attendance&session_id=$session_id&token=$token";
+        $qr_url = "https://backend-ipressence.onrender.com?action=check_attendance&session_id=$session_id&token=$token";
 
         echo json_encode([
             'status' => 'success',
