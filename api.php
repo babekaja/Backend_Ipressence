@@ -5,24 +5,20 @@ header('Access-Control-Allow-Headers: Content-Type, Authorization');
 header('Content-Type: application/json');
 
 // Handle preflight requests
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
-
-// Database configuration
-$host = 'localhost';
-$dbname = 'ucb_attendance';
-$username = 'root';
-$password = '1234';
+$host = getenv('DB_HOST');       // ex: db.onrender.com
+$dbname = getenv('DB_NAME');     // nom de la base
+$username = getenv('DB_USER');   // utilisateur
+$password = getenv('DB_PASSWORD'); // mot de passe
+$port = getenv('DB_PORT') ?: 3306; // port par défaut si non défini
 
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
+    $pdo = new PDO("mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4", $username, $password);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch (PDOException $e) {
     echo json_encode(['status' => 'error', 'message' => 'Database connection failed: ' . $e->getMessage()]);
     exit();
 }
+
 
 // Get action parameter
 $action = $_GET['action'] ?? '';
