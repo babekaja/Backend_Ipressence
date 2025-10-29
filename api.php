@@ -24,12 +24,11 @@ class Database {
     private $pdo;
 
     private function __construct() {
-        $host = getenv('DB_HOST');       // ex: db.onrender.com
-$dbname = getenv('DB_NAME');     // nom de la base
-$username = getenv('DB_USER');   // utilisateur
-$password = getenv('DB_PASSWORD'); // mot de passe
-$port = getenv('DB_PORT') ?: 3306; // port par défaut si non défini
-
+      $host = getenv('DB_HOST') ?: 'localhost';
+        $dbname = getenv('DB_NAME') ?: 'attendance_db';
+        $username = getenv('DB_USER') ?: 'root';
+        $password = getenv('DB_PASSWORD') ?: '';
+        $port = getenv('DB_PORT') ?: 3306;
 
         try {
             $this->pdo = new PDO(
