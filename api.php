@@ -99,14 +99,38 @@ class AuthController {
             $stmt->execute([$matricule]);
             $user = $stmt->fetch();
 
-            // CORRECTION CRITIQUE: Utilisation de password_verify() pour la vérification sécurisée
-            // Le bloc de débogage temporaire affichant le mot de passe en clair a été supprimé.
+            // --- DÉBUT MODIFICATION DE DÉBOGAGE TEMPORAIRE (Mode Texte Brut Requis par l'utilisateur) ---
+            // ATTENTION: Cette modification désactive la vérification sécurisée par HASH (`password_verify`)
+            // et utilise une comparaison non sécurisée ($password !== $user['password']).
+            // À utiliser UNIQUEMENT pour un débogage local temporaire avant de revenir à `password_verify`.
+            if (!$user || $password !== $user['password']) {
+                http_response_code(401);
+                
+                // Si l'utilisateur est trouvé mais le mot de passe ne correspond pas, renvoyez les valeurs
+                if ($user) {
+                    echo json_encode([
+                        'DEBUG_ERROR' => 'Mot de passe incorrect (Mode Texte Brut)',
+                        'Matricule_Saisi' => $matricule,
+                        'Mot_De_Passe_Saisi' => $password,
+                        'Mot_De_Passe_DB' => $user['password'], // Ceci sera le hash stocké
+                        'CONSEIL' => 'Comparez Saisi et DB pour trouver une erreur de frappe, d\'espace ou de casse.'
+                    ]);
+                } else {
+                    echo json_encode(['error' => 'Matricule ou mot de passe incorrect']);
+                }
+                return;
+            }
+            // --- FIN MODIFICATION DE DÉBOGAGE TEMPORAIRE ---
+            
+            // NOTE: Le code sécurisé d'origine utilisant `password_verify` est remplacé par le bloc de débogage ci-dessus.
+            // Pour rétablir la sécurité : Remplacer le bloc ci-dessus par :
+            /*
             if (!$user || !password_verify($password, $user['password'])) {
                 http_response_code(401);
                 echo json_encode(['error' => 'Matricule ou mot de passe incorrect.']);
                 return;
             }
-            // Fin de la correction de sécurité.
+            */
 
             if ($user['status'] !== 'active') {
                 http_response_code(403);
