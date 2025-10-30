@@ -2,22 +2,15 @@
 /**
  * UCB BUKAVU - ATTENDANCE SYSTEM API
  * Complete REST API for attendance management
- * Version: 2.1 (Security Patch & Render Compatibility)
- * Date: 2025-10-30
- * * Corrections:
- * - Implemented secure password hashing (password_hash/password_verify).
- * - Removed temporary plain-text password debug block.
- * - Added DB_PORT to the PDO connection string for cloud compatibility.
+ * Version: 2.0
+ * Date: 2025-10-29
  */
 
-// Permet l'accès depuis n'importe quel domaine (CORS)
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: https://ipressence-web2.vercel.app');
 
-// Gestion de la requête OPTIONS (Preflight pour CORS)
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
@@ -25,7 +18,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 // ============================================
 // DATABASE CONNECTION CLASS
-// Utilise les variables d'environnement (getenv) comme recommandé pour Render
 // ============================================
 class Database {
     private static $instance = null;
@@ -40,12 +32,10 @@ class Database {
         // Utilisation du port par défaut (3306 pour MySQL) si DB_PORT n'est pas défini
         $port = getenv('DB_PORT') ?: 3306; 
 
-        try {
-            // CORRECTION: Ajout explicite du port dans le DSN
-            $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
 
+        try {
             $this->pdo = new PDO(
-                $dsn,
+                "mysql:host=$host;dbname=$dbname;charset=utf8mb4",
                 $username,
                 $password,
                 [
@@ -55,7 +45,6 @@ class Database {
                 ]
             );
         } catch (PDOException $e) {
-            // Retourne une erreur 500 et le message de l'erreur (pour le débogage de la connexion)
             http_response_code(500);
             echo json_encode(['error' => 'Database connection failed', 'message' => $e->getMessage()]);
             exit();
@@ -100,10 +89,7 @@ class AuthController {
             $stmt->execute([$matricule]);
             $user = $stmt->fetch();
 
-            // --- DÉBUT MODIFICATION DE DÉBOGAGE TEMPORAIRE (Mode Texte Brut Requis par l'utilisateur) ---
-            // ATTENTION: Cette modification désactive la vérification sécurisée par HASH (`password_verify`)
-            // et utilise une comparaison non sécurisée ($password !== $user['password']).
-            // À utiliser UNIQUEMENT pour un débogage local temporaire avant de revenir à `password_verify`.
+            // TEMPORARY DEBUG MODIFICATION: Affiche les mots de passe si la connexion échoue
             if (!$user || $password !== $user['password']) {
                 http_response_code(401);
                 
@@ -113,7 +99,7 @@ class AuthController {
                         'DEBUG_ERROR' => 'Mot de passe incorrect (Mode Texte Brut)',
                         'Matricule_Saisi' => $matricule,
                         'Mot_De_Passe_Saisi' => $password,
-                        'Mot_De_Passe_DB' => $user['password'], // Ceci sera le hash stocké
+                        'Mot_De_Passe_DB' => $user['password'],
                         'CONSEIL' => 'Comparez Saisi et DB pour trouver une erreur de frappe, d\'espace ou de casse.'
                     ]);
                 } else {
@@ -121,17 +107,7 @@ class AuthController {
                 }
                 return;
             }
-            // --- FIN MODIFICATION DE DÉBOGAGE TEMPORAIRE ---
-            
-            // NOTE: Le code sécurisé d'origine utilisant `password_verify` est remplacé par le bloc de débogage ci-dessus.
-            // Pour rétablir la sécurité : Remplacer le bloc ci-dessus par :
-            /*
-            if (!$user || !password_verify($password, $user['password'])) {
-                http_response_code(401);
-                echo json_encode(['error' => 'Matricule ou mot de passe incorrect.']);
-                return;
-            }
-            */
+            // FIN DE LA MODIFICATION DE DEBUG
 
             if ($user['status'] !== 'active') {
                 http_response_code(403);
@@ -139,7 +115,6 @@ class AuthController {
                 return;
             }
 
-            // Ne jamais renvoyer le hash du mot de passe dans la réponse
             unset($user['password']);
             echo json_encode(['success' => true, 'user' => $user]);
         } catch (PDOException $e) {
@@ -171,8 +146,8 @@ class AuthController {
                 return;
             }
 
-            // CORRECTION CRITIQUE: Hachage du mot de passe
-            $hashedPassword = password_hash($input['password'], PASSWORD_DEFAULT);
+            // MODIFICATION: Suppression du hachage de mot de passe
+            $plainPassword = $input['password'];
 
             $stmt = $this->db->prepare("
                 INSERT INTO users (matricule, password, nom, prenom, email, telephone, type, status, avatar)
@@ -180,7 +155,7 @@ class AuthController {
             ");
             $stmt->execute([
                 $input['matricule'],
-                $hashedPassword, // Utilisation du mot de passe haché
+                $plainPassword, // Utilisation du mot de passe en texte brut
                 $input['nom'],
                 $input['prenom'] ?? null,
                 $input['email'] ?? null,
@@ -261,8 +236,8 @@ class AuthController {
                 return;
             }
 
-            // CORRECTION CRITIQUE: Hachage du mot de passe
-            $hashedPassword = password_hash($input['password'], PASSWORD_DEFAULT);
+            // MODIFICATION: Suppression du hachage de mot de passe
+            $plainPassword = $input['password'];
 
             $stmt = $this->db->prepare("
                 INSERT INTO users (matricule, password, nom, prenom, email, telephone, type, status)
@@ -270,7 +245,7 @@ class AuthController {
             ");
             $stmt->execute([
                 $input['matricule'],
-                $hashedPassword, // Utilisation du mot de passe haché
+                $plainPassword, // Utilisation du mot de passe en texte brut
                 $input['nom'],
                 $input['prenom'] ?? null,
                 $input['email'],
@@ -393,7 +368,6 @@ class AttendanceController {
         }
 
         try {
-            // Utilisation de crypto/random_bytes pour plus de sécurité pour le token
             $sessionId = 'session_' . time() . '_' . bin2hex(random_bytes(4));
             $token = bin2hex(random_bytes(16));
             $durationMinutes = $input['duration_minutes'] ?? 5;
@@ -418,10 +392,8 @@ class AttendanceController {
             $stmt->execute([$id]);
             $session = $stmt->fetch();
 
-            // Construction de l'URL pour le QR code
             $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http")
-                       . "://" . $_SERVER['HTTP_HOST'];
-            // NOTE: Assurez-vous que votre configuration Render redirige les requêtes /scan vers cet index.php ou api.php
+                     . "://" . $_SERVER['HTTP_HOST'];
             $qrUrl = $baseUrl . "/scan?session_id=" . $sessionId . "&token=" . $token;
 
             http_response_code(201);
@@ -432,7 +404,7 @@ class AttendanceController {
             ]);
         } catch (PDOException $e) {
             http_response_code(500);
-            echo json_encode(['error' => 'Erreur lors de la création de la session', 'message' => $e->getMessage()]);
+            echo json_encode(['error' => 'Erreur lors de la création de la session']);
         }
     }
 
@@ -469,7 +441,7 @@ class AttendanceController {
             echo json_encode(['valid' => true, 'session' => $session]);
         } catch (PDOException $e) {
             http_response_code(500);
-            echo json_encode(['error' => 'Erreur serveur', 'message' => $e->getMessage()]);
+            echo json_encode(['error' => 'Erreur serveur']);
         }
     }
 
@@ -508,7 +480,7 @@ class AttendanceController {
             echo json_encode(['success' => true, 'message' => 'Présence enregistrée avec succès']);
         } catch (PDOException $e) {
             http_response_code(500);
-            echo json_encode(['error' => 'Erreur lors de l\'enregistrement', 'message' => $e->getMessage()]);
+            echo json_encode(['error' => 'Erreur lors de l\'enregistrement']);
         }
     }
 
@@ -521,14 +493,12 @@ class AttendanceController {
         }
 
         try {
-            // Utilisation de JOIN sur la table users pour récupérer les détails de l'étudiant
             $stmt = $this->db->prepare("
                 SELECT p.*, u.matricule as student_matricule,
                        CONCAT(u.nom, ' ', COALESCE(u.prenom, '')) as student_name
                 FROM presences p
-                INNER JOIN sessions s ON p.session_id = s.id
                 INNER JOIN users u ON p.etudiant_id = u.id
-                WHERE s.session_id = ?
+                WHERE p.session_id = ?
                 ORDER BY p.date_heure DESC
             ");
             $stmt->execute([$sessionId]);
@@ -537,7 +507,7 @@ class AttendanceController {
             echo json_encode(['success' => true, 'data' => $attendance]);
         } catch (PDOException $e) {
             http_response_code(500);
-            echo json_encode(['error' => 'Erreur lors du chargement des présences', 'message' => $e->getMessage()]);
+            echo json_encode(['error' => 'Erreur lors du chargement des présences']);
         }
     }
 
@@ -565,7 +535,7 @@ class AttendanceController {
             echo json_encode(['success' => true, 'data' => $attendance]);
         } catch (PDOException $e) {
             http_response_code(500);
-            echo json_encode(['error' => 'Erreur lors du chargement', 'message' => $e->getMessage()]);
+            echo json_encode(['error' => 'Erreur lors du chargement']);
         }
     }
 
@@ -602,7 +572,7 @@ class AttendanceController {
             echo json_encode(['success' => true, 'data' => $attendance]);
         } catch (PDOException $e) {
             http_response_code(500);
-            echo json_encode(['error' => 'Erreur lors du chargement', 'message' => $e->getMessage()]);
+            echo json_encode(['error' => 'Erreur lors du chargement']);
         }
     }
 
@@ -639,7 +609,7 @@ class AttendanceController {
             echo json_encode(['success' => true, 'data' => $attendance]);
         } catch (PDOException $e) {
             http_response_code(500);
-            echo json_encode(['error' => 'Erreur lors du chargement', 'message' => $e->getMessage()]);
+            echo json_encode(['error' => 'Erreur lors du chargement']);
         }
     }
 }
@@ -658,12 +628,10 @@ class ExternalApiController {
 
         $url = "https://akhademie.ucbukavu.ac.cd/api/v1/school-students/read-by-matricule?matricule=" . urlencode($matricule);
 
-        // Ajout d'un User-Agent simple pour éviter d'être bloqué par le serveur distant
         $context = stream_context_create([
             'http' => [
                 'timeout' => 30,
-                'ignore_errors' => true,
-                'header' => 'User-Agent: UCB Attendance API Client/1.0' 
+                'ignore_errors' => true
             ]
         ]);
 
@@ -692,8 +660,7 @@ class ExternalApiController {
         $context = stream_context_create([
             'http' => [
                 'timeout' => 30,
-                'ignore_errors' => true,
-                'header' => 'User-Agent: UCB Attendance API Client/1.0'
+                'ignore_errors' => true
             ]
         ]);
 
@@ -724,13 +691,8 @@ $method = $_SERVER['REQUEST_METHOD'];
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $query = $_GET;
 
-// En mode cloud/Render, le chemin peut inclure le nom du script si la réécriture d'URL
-// n'est pas configurée pour l'omettre.
+// Remove script name from path if present
 $path = str_replace('/api.php', '', $path);
-// S'assurer que le chemin commence par un '/' (root path)
-if (empty($path) || $path[0] !== '/') {
-    $path = '/' . $path;
-}
 
 // Route handling
 try {
@@ -842,6 +804,6 @@ try {
     }
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => 'Erreur serveur interne non gérée', 'message' => $e->getMessage()]);
+    echo json_encode(['error' => 'Erreur serveur', 'message' => $e->getMessage()]);
 }
 ?>
