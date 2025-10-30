@@ -32,10 +32,10 @@ class Database {
         // Utilisation du port par défaut (3306 pour MySQL) si DB_PORT n'est pas défini
         $port = getenv('DB_PORT') ?: 3306; 
 
-
         try {
+            // CORRECTION: Ajout du port dans la chaîne DSN
             $this->pdo = new PDO(
-                "mysql:host=$host;dbname=$dbname;charset=utf8mb4",
+                "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4",
                 $username,
                 $password,
                 [
@@ -45,6 +45,7 @@ class Database {
                 ]
             );
         } catch (PDOException $e) {
+            // En cas d'échec de connexion, on renvoie une erreur 500 et on arrête l'exécution
             http_response_code(500);
             echo json_encode(['error' => 'Database connection failed', 'message' => $e->getMessage()]);
             exit();
@@ -85,30 +86,19 @@ class AuthController {
         }
 
         try {
-            $stmt = $this->db->prepare("SELECT * FROM users WHERE matricule = ?");
+            $stmt = $this->db->prepare("SELECT id, matricule, password, nom, prenom, email, type, status FROM users WHERE matricule = ?");
             $stmt->execute([$matricule]);
             $user = $stmt->fetch();
 
-            // TEMPORARY DEBUG MODIFICATION: Affiche les mots de passe si la connexion échoue
+            // VULNÉRABILITÉ CRITIQUE: L'utilisateur a demandé d'enlever le hachage.
+            // Ceci compare le mot de passe en texte brut.
+            // Pour la PRODUCTION, il FAUT utiliser password_verify($password, $user['password'])
             if (!$user || $password !== $user['password']) {
                 http_response_code(401);
-                
-                // Si l'utilisateur est trouvé mais le mot de passe ne correspond pas, renvoyez les valeurs
-                if ($user) {
-                    echo json_encode([
-                        'DEBUG_ERROR' => 'Mot de passe incorrect (Mode Texte Brut)',
-                        'Matricule_Saisi' => $matricule,
-                        'Mot_De_Passe_Saisi' => $password,
-                        'Mot_De_Passe_DB' => $user['password'],
-                        'CONSEIL' => 'Comparez Saisi et DB pour trouver une erreur de frappe, d\'espace ou de casse.'
-                    ]);
-                } else {
-                    echo json_encode(['error' => 'Matricule ou mot de passe incorrect']);
-                }
+                echo json_encode(['error' => 'Matricule ou mot de passe incorrect']);
                 return;
             }
-            // FIN DE LA MODIFICATION DE DEBUG
-
+            
             if ($user['status'] !== 'active') {
                 http_response_code(403);
                 echo json_encode(['error' => 'Compte en attente de validation ou suspendu']);
@@ -146,7 +136,8 @@ class AuthController {
                 return;
             }
 
-            // MODIFICATION: Suppression du hachage de mot de passe
+            // VULNÉRABILITÉ CRITIQUE: Stockage du mot de passe en texte brut (selon la demande).
+            // Pour la PRODUCTION, il FAUT utiliser $plainPassword = password_hash($input['password'], PASSWORD_DEFAULT);
             $plainPassword = $input['password'];
 
             $stmt = $this->db->prepare("
@@ -199,10 +190,9 @@ class AuthController {
 
             $this->db->commit();
 
-            $stmt = $this->db->prepare("SELECT * FROM users WHERE id = ?");
+            $stmt = $this->db->prepare("SELECT id, matricule, nom, prenom, email, type, status, avatar FROM users WHERE id = ?");
             $stmt->execute([$userId]);
             $user = $stmt->fetch();
-            unset($user['password']);
 
             http_response_code(201);
             echo json_encode(['success' => true, 'user' => $user]);
@@ -236,7 +226,8 @@ class AuthController {
                 return;
             }
 
-            // MODIFICATION: Suppression du hachage de mot de passe
+            // VULNÉRABILITÉ CRITIQUE: Stockage du mot de passe en texte brut (selon la demande).
+            // Pour la PRODUCTION, il FAUT utiliser $plainPassword = password_hash($input['password'], PASSWORD_DEFAULT);
             $plainPassword = $input['password'];
 
             $stmt = $this->db->prepare("
@@ -267,10 +258,9 @@ class AuthController {
 
             $this->db->commit();
 
-            $stmt = $this->db->prepare("SELECT * FROM users WHERE id = ?");
+            $stmt = $this->db->prepare("SELECT id, matricule, nom, prenom, email, type, status FROM users WHERE id = ?");
             $stmt->execute([$userId]);
             $user = $stmt->fetch();
-            unset($user['password']);
 
             http_response_code(201);
             echo json_encode(['success' => true, 'user' => $user]);
@@ -394,6 +384,8 @@ class AttendanceController {
 
             $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http")
                      . "://" . $_SERVER['HTTP_HOST'];
+            // L'URL de QR code générée devra être traitée par une règle de réécriture (e.g. .htaccess)
+            // ou par une page dédiée (scan.php) si l'URL ne pointe pas vers api.php.
             $qrUrl = $baseUrl . "/scan?session_id=" . $sessionId . "&token=" . $token;
 
             http_response_code(201);
@@ -420,7 +412,7 @@ class AttendanceController {
 
         try {
             $stmt = $this->db->prepare("
-                SELECT * FROM sessions
+                SELECT id, session_id, enseignant_id, cours_id, salle, expiration FROM sessions
                 WHERE session_id = ? AND token = ?
             ");
             $stmt->execute([$sessionId, $token]);
@@ -458,6 +450,7 @@ class AttendanceController {
         }
 
         try {
+            // Vérification si la présence est déjà enregistrée
             $stmt = $this->db->prepare("
                 SELECT id FROM presences
                 WHERE etudiant_id = ? AND session_id = ?
@@ -470,6 +463,7 @@ class AttendanceController {
                 return;
             }
 
+            // Enregistrement de la présence
             $stmt = $this->db->prepare("
                 INSERT INTO presences (etudiant_id, session_id, date_heure)
                 VALUES (?, ?, NOW())
@@ -618,6 +612,9 @@ class AttendanceController {
 // EXTERNAL API PROXY
 // ============================================
 class ExternalApiController {
+    // Note: Ces fonctions devraient idéalement utiliser cURL pour plus de contrôle
+    // et de robustesse que file_get_contents.
+
     public function getStudent() {
         $matricule = $_GET['matricule'] ?? '';
         if (empty($matricule)) {
@@ -688,11 +685,16 @@ class ExternalApiController {
 // ROUTER
 // ============================================
 $method = $_SERVER['REQUEST_METHOD'];
-$path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+// On utilise PATH_INFO si le serveur le supporte, sinon REQUEST_URI
+$requestUri = $_SERVER['REQUEST_URI'];
+$path = parse_url($requestUri, PHP_URL_PATH);
 $query = $_GET;
 
-// Remove script name from path if present
-$path = str_replace('/api.php', '', $path);
+// Enlève le nom du script (ex: /api.php) de l'URI pour obtenir la route propre
+$scriptName = $_SERVER['SCRIPT_NAME'];
+if (strpos($path, $scriptName) !== false) {
+    $path = str_replace($scriptName, '', $path);
+}
 
 // Route handling
 try {
@@ -761,7 +763,7 @@ try {
         $controller = new ExternalApiController();
         $controller->getStructure();
     }
-    // Legacy support for old action-based routing
+    // Legacy support for old action-based routing (for compatibility)
     elseif (isset($query['action'])) {
         $action = $query['action'];
 
